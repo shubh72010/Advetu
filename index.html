@@ -3,35 +3,37 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-<title>Mini Adventure Game</title>
+<title>Legends of the Blue Flower</title>
 <style>
   html, body {
     margin: 0; padding: 0; height: 100%; overflow: hidden;
-    background: #222;
+    background: #111;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     color: white;
   }
   #gameCanvas {
     display: block;
     margin: auto;
-    background: #333;
+    background: #222;
     image-rendering: pixelated;
     touch-action: none;
+    border: 4px solid #111;
   }
   #dialogueBox {
     position: fixed;
     bottom: 10px;
     left: 50%;
     transform: translateX(-50%);
-    width: 90%;
+    width: 95vw;
     max-width: 600px;
-    background: rgba(0,0,0,0.8);
+    background: rgba(0,0,0,0.92);
     border: 2px solid #fff;
     border-radius: 8px;
     padding: 15px;
     font-size: 1.2em;
     display: none;
     user-select: none;
+    z-index: 10;
   }
   #dialogueBox button {
     margin-top: 10px;
@@ -46,183 +48,613 @@
   #dialogueBox button:hover {
     background: #777;
   }
+  #hud {
+    position: fixed;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 95vw;
+    max-width: 600px;
+    background: rgba(0,0,0,0.6);
+    border-radius: 8px;
+    padding: 5px 15px;
+    font-size: 1em;
+    z-index: 5;
+    color: #fff;
+    text-align: left;
+    pointer-events: none;
+    font-family: monospace;
+    letter-spacing: 1px;
+  }
+  #cutscene {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    background: rgba(0,0,0,0.95);
+    color: #fff;
+    display: none;
+    z-index: 100;
+    font-size: 2em;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    flex-direction: column;
+    padding: 0 10vw;
+  }
+  #cutscene button {
+    margin-top: 30px;
+    padding: 12px 30px;
+    font-size: 1em;
+    background: #555;
+    border: none;
+    border-radius: 5px;
+    color: white;
+    cursor: pointer;
+  }
+  #cutscene button:hover {
+    background: #777;
+  }
 </style>
 </head>
 <body>
-
-<canvas id="gameCanvas" width="320" height="320"></canvas>
-
+<canvas id="gameCanvas"></canvas>
+<div id="hud"></div>
 <div id="dialogueBox">
   <div id="dialogueText"></div>
   <button id="nextBtn">Next</button>
 </div>
-
+<div id="cutscene">
+  <div id="cutsceneText"></div>
+  <button id="cutsceneBtn">Continue</button>
+</div>
 <script>
-// --- Game Setup ---
+// ========== GAME CONSTANTS ==========
+const TILE_SIZE = 16;
+const VISIBLE_TILES_X = 20, VISIBLE_TILES_Y = 20; // for logic; canvas will scale
+const FPS = 60;
+const PLAYER_SPEED = 1;
+const DUNGEON_KEY_ID = "dungeon_key";
+const FLOWER_ID = "blue_flower";
+const BOSS_ID = "boss";
+const GAME_VERSION = "1.0";
+
+// ========== CANVAS SCALING ==========
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-const scale = 2; // scale up for mobile clarity
-canvas.style.width = canvas.width * scale + 'px';
-canvas.style.height = canvas.height * scale + 'px';
+let scale = 2;
+function resizeCanvas() {
+  // Fit to window, keep aspect ratio
+  let w = window.innerWidth, h = window.innerHeight;
+  let s = Math.min(Math.floor(w / VISIBLE_TILES_X), Math.floor(h / VISIBLE_TILES_Y));
+  scale = Math.max(2, s);
+  canvas.width = VISIBLE_TILES_X * TILE_SIZE;
+  canvas.height = VISIBLE_TILES_Y * TILE_SIZE;
+  canvas.style.width = (VISIBLE_TILES_X * TILE_SIZE * scale) + "px";
+  canvas.style.height = (VISIBLE_TILES_Y * TILE_SIZE * scale) + "px";
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
 
+// ========== DOM ELEMENTS ==========
 const dialogueBox = document.getElementById('dialogueBox');
 const dialogueText = document.getElementById('dialogueText');
 const nextBtn = document.getElementById('nextBtn');
+const hud = document.getElementById('hud');
+const cutsceneDiv = document.getElementById('cutscene');
+const cutsceneText = document.getElementById('cutsceneText');
+const cutsceneBtn = document.getElementById('cutsceneBtn');
 
-const TILE_SIZE = 16;
-const MAP_WIDTH = 20;
-const MAP_HEIGHT = 20;
-
-// Simple tile map: 0 = floor, 1 = wall
-const map = [
-  // 20x20 grid, simple room with walls around
-  1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-  1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-  1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-  1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-  1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-  1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-  1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-  1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-  1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-  1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-  1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-  1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-  1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-  1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-  1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-  1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-  1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-  1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-  1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-  1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-];
-
-// Player and NPC positions
-let player = { x: 10, y: 10, color: '#0f0' };
-const npcs = [
-  {
-    x: 5,
-    y: 5,
-    color: '#f00',
-    name: 'Old Man',
-    dialogue: [
-      "Hello traveler!",
-      "Beware of the dark forest ahead.",
-      "Good luck on your journey!"
+// ========== MAPS ==========
+const maps = {
+  "village": {
+    name: "Village",
+    width: 20, height: 20,
+    tiles: [
+      // 0: grass, 1: wall, 2: house, 3: path, 4: forest, 5: sign, 6: portal to forest
+      1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+      1,0,0,0,0,0,0,0,0,3,3,0,0,0,0,0,0,0,6,1,
+      1,0,2,2,0,0,0,0,0,3,3,0,0,0,0,0,0,0,0,1,
+      1,0,2,2,0,0,0,0,0,3,3,0,0,0,0,0,0,0,0,1,
+      1,0,0,0,0,0,0,0,0,3,3,0,0,0,0,0,0,0,0,1,
+      1,0,0,0,0,0,0,0,0,3,3,0,0,0,0,0,0,0,0,1,
+      1,0,0,0,0,0,0,0,0,3,3,0,0,0,0,0,0,0,0,1,
+      1,0,0,0,0,0,0,0,0,3,3,0,0,0,0,0,0,0,0,1,
+      1,0,0,0,0,0,0,0,0,3,3,0,0,0,0,0,0,0,0,1,
+      1,5,0,0,0,0,0,0,0,3,3,0,0,0,0,0,0,0,0,1,
+      1,0,0,0,0,0,0,0,0,3,3,0,0,0,0,0,0,0,0,1,
+      1,0,0,0,0,0,0,0,0,3,3,0,0,0,0,0,0,0,0,1,
+      1,0,0,0,0,0,0,0,0,3,3,0,0,0,0,0,0,0,0,1,
+      1,0,0,0,0,0,0,0,0,3,3,0,0,0,0,0,0,0,0,1,
+      1,0,0,0,0,0,0,0,0,3,3,0,0,0,0,0,0,0,0,1,
+      1,0,0,0,0,0,0,0,0,3,3,0,0,0,0,0,0,0,0,1,
+      1,0,0,0,0,0,0,0,0,3,3,0,0,0,0,0,0,0,0,1,
+      1,0,0,0,0,0,0,0,0,3,3,0,0,0,0,0,0,0,0,1,
+      1,0,0,0,0,0,0,0,0,3,3,0,0,0,0,0,0,0,0,1,
+      1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
     ],
-    dialogueIndex: 0,
+    npcs: [
+      {
+        id: "grandpa",
+        name: "Grandpa Rowan",
+        x: 3, y: 2,
+        color: "#f00",
+        dialogue: [
+          "Welcome to our village, young one.",
+          "Long ago, a rare blue flower was lost in the forest.",
+          "If you find it, bring it to me. It is the key to our past."
+        ],
+        quest: "Find the blue flower in the forest.",
+        questCompleteDialogue: [
+          "You found it! This flower will heal the land.",
+          "But beware, darkness stirs in the old dungeon..."
+        ],
+        questGiven: false,
+        questComplete: false,
+        questId: FLOWER_ID,
+      },
+      {
+        id: "librarian",
+        name: "Librarian",
+        x: 11, y: 3,
+        color: "#ff0",
+        dialogue: [
+          "The forest is deep. Legends say a dungeon lies beneath.",
+          "If you find a key, you may enter."
+        ],
+        quest: null,
+        questCompleteDialogue: [],
+        questGiven: false,
+        questComplete: false,
+        questId: null,
+      }
+    ],
+    objects: [
+      {
+        id: "sign",
+        x: 1, y: 9,
+        type: "sign",
+        text: "Village Square: North\nForest: East"
+      }
+    ],
+    portals: [
+      { x: 18, y: 1, to: "forest", px: 1, py: 10 }
+    ]
+  },
+  "forest": {
+    name: "Forest",
+    width: 20, height: 20,
+    tiles: [
+      // 0: grass, 1: wall, 4: forest, 7: flower, 8: portal to dungeon
+      1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+      1,0,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,0,1,
+      1,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,1,
+      1,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,1,
+      1,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,1,
+      1,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,1,
+      1,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,1,
+      1,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,1,
+      1,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,1,
+      1,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,1,
+      1,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,1,
+      1,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,1,
+      1,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,1,
+      1,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,1,
+      1,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,1,
+      1,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,1,
+      1,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,1,
+      1,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,1,
+      1,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,1,
+      1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    ],
+    npcs: [
+      {
+        id: "hermit",
+        name: "Forest Hermit",
+        x: 10, y: 10,
+        color: "#0ff",
+        dialogue: [
+          "You seek the blue flower? Beware the shadows.",
+          "The dungeon key is hidden deep in the woods."
+        ],
+        quest: "Find the dungeon key.",
+        questCompleteDialogue: [
+          "You found the key! The dungeon awaits to the east."
+        ],
+        questGiven: false,
+        questComplete: false,
+        questId: DUNGEON_KEY_ID,
+      }
+    ],
+    objects: [
+      { id: FLOWER_ID, x: 18, y: 18, type: "flower" },
+      { id: DUNGEON_KEY_ID, x: 2, y: 17, type: "key" }
+    ],
+    portals: [
+      { x: 1, y: 10, to: "village", px: 18, py: 1 },
+      { x: 18, y: 10, to: "dungeon", px: 1, py: 10, locked: true, key: DUNGEON_KEY_ID }
+    ]
+  },
+  "dungeon": {
+    name: "Dungeon",
+    width: 20, height: 20,
+    tiles: [
+      // 0: floor, 1: wall, 9: boss, 10: portal to forest
+      1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+      1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,1,
+      1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,
+      1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,1,
+      1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,0,1,0,0,1,
+      1,0,1,0,1,0,0,0,0,0,0,0,0,0,1,0,1,0,0,1,
+      1,0,1,0,1,0,1,1,1,1,1,1,1,0,1,0,1,0,0,1,
+      1,0,1,0,1,0,1,0,0,0,0,0,1,0,1,0,1,0,0,1,
+      1,0,1,0,1,0,1,0,1,1,1,0,1,0,1,0,1,0,0,1,
+      1,0,1,0,1,0,1,0,1,9,1,0,1,0,1,0,1,0,0,1,
+      1,0,1,0,1,0,1,0,1,1,1,0,1,0,1,0,1,0,0,1,
+      1,0,1,0,1,0,1,0,0,0,0,0,1,0,1,0,1,0,0,1,
+      1,0,1,0,1,0,1,1,1,1,1,1,1,0,1,0,1,0,0,1,
+      1,0,1,0,1,0,0,0,0,0,0,0,0,0,1,0,1,0,0,1,
+      1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,0,1,0,0,1,
+      1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,1,
+      1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,
+      1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
+      1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
+      1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    ],
+    npcs: [],
+    objects: [
+      { id: BOSS_ID, x: 9, y: 9, type: "boss" }
+    ],
+    portals: [
+      { x: 18, y: 1, to: "forest", px: 18, py: 10 }
+    ]
   }
-];
+};
 
-// Game state
+// ========== PLAYER STATE ==========
+let player = {
+  x: 3, y: 10,
+  color: "#0f0",
+  inventory: {},
+  currentMap: "village",
+  canMove: true
+};
 let keysPressed = {};
 let inDialogue = false;
 let currentNPC = null;
+let hudMsg = "";
+let currentCutscene = null;
+let cutsceneQueue = [];
+let bossDefeated = false;
 
-// Draw functions
-function drawTile(x, y, color) {
-  ctx.fillStyle = color;
-  ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+// ========== DRAWING ==========
+function drawTile(x, y, type) {
+  // Village/Forest/Dungeon tile types
+  if (type === 0) { // grass/floor
+    ctx.fillStyle = "#222";
+    ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
+  }
+  else if (type === 1) { // wall
+    ctx.fillStyle = "#444";
+    ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
+    ctx.fillStyle = "#666";
+    ctx.fillRect(x*TILE_SIZE+2, y*TILE_SIZE+2, TILE_SIZE-4, TILE_SIZE-4);
+  }
+  else if (type === 2) { // house
+    ctx.fillStyle = "#b97a57";
+    ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(x*TILE_SIZE+4, y*TILE_SIZE+8, 8, 4);
+  }
+  else if (type === 3) { // path
+    ctx.fillStyle = "#a88";
+    ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
+  }
+  else if (type === 4) { // forest
+    ctx.fillStyle = "#1a3d1a";
+    ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
+    ctx.fillStyle = "#2e6b2e";
+    ctx.beginPath();
+    ctx.arc(x*TILE_SIZE+8, y*TILE_SIZE+8, 6, 0, Math.PI*2);
+    ctx.fill();
+  }
+  else if (type === 5) { // sign
+    ctx.fillStyle = "#964B00";
+    ctx.fillRect(x*TILE_SIZE+6, y*TILE_SIZE+4, 4, 8);
+    ctx.fillStyle = "#ff8";
+    ctx.fillRect(x*TILE_SIZE+2, y*TILE_SIZE+2, 12, 6);
+  }
+  else if (type === 6 || type === 8 || type === 10) { // portal
+    ctx.fillStyle = "#00f";
+    ctx.fillRect(x*TILE_SIZE+4, y*TILE_SIZE+4, 8, 8);
+    ctx.strokeStyle = "#fff";
+    ctx.strokeRect(x*TILE_SIZE+4, y*TILE_SIZE+4, 8, 8);
+  }
+  else if (type === 7) { // flower
+    ctx.fillStyle = "#222";
+    ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
+    ctx.fillStyle = "#00f";
+    ctx.beginPath();
+    ctx.arc(x*TILE_SIZE+8, y*TILE_SIZE+8, 5, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(x*TILE_SIZE+8, y*TILE_SIZE+8, 2, 0, Math.PI*2);
+    ctx.fill();
+  }
+  else if (type === 9) { // boss
+    ctx.fillStyle = "#500";
+    ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
+    ctx.fillStyle = "#f00";
+    ctx.beginPath();
+    ctx.arc(x*TILE_SIZE+8, y*TILE_SIZE+8, 7, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(x*TILE_SIZE+6, y*TILE_SIZE+5, 2, 2);
+    ctx.fillRect(x*TILE_SIZE+10, y*TILE_SIZE+5, 2, 2);
+  }
 }
-
 function drawMap() {
-  for (let y = 0; y < MAP_HEIGHT; y++) {
-    for (let x = 0; x < MAP_WIDTH; x++) {
-      let tile = map[y * MAP_WIDTH + x];
-      if (tile === 1) {
-        drawTile(x, y, '#555'); // wall
-      } else {
-        drawTile(x, y, '#222'); // floor
+  let m = maps[player.currentMap];
+  for (let y = 0; y < m.height; y++) {
+    for (let x = 0; x < m.width; x++) {
+      let t = m.tiles[y*m.width + x];
+      drawTile(x, y, t);
+    }
+  }
+  // Draw map objects (flower, key, boss)
+  if (m.objects) {
+    for (let obj of m.objects) {
+      if (obj.type === "flower" && !player.inventory[FLOWER_ID]) {
+        drawTile(obj.x, obj.y, 7);
+      }
+      if (obj.type === "key" && !player.inventory[DUNGEON_KEY_ID]) {
+        ctx.fillStyle = "#ff0";
+        ctx.fillRect(obj.x*TILE_SIZE+6, obj.y*TILE_SIZE+10, 4, 4);
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(obj.x*TILE_SIZE+8, obj.y*TILE_SIZE+12, 2, 2);
+      }
+      if (obj.type === "boss" && !bossDefeated) {
+        drawTile(obj.x, obj.y, 9);
       }
     }
   }
 }
-
 function drawPlayer() {
-  drawTile(player.x, player.y, player.color);
+  ctx.fillStyle = player.color;
+  ctx.fillRect(player.x*TILE_SIZE+3, player.y*TILE_SIZE+3, 10, 10);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(player.x*TILE_SIZE+6, player.y*TILE_SIZE+4, 4, 4);
+  // If holding flower
+  if (player.inventory[FLOWER_ID]) {
+    ctx.fillStyle = "#00f";
+    ctx.fillRect(player.x*TILE_SIZE+12, player.y*TILE_SIZE+12, 3, 3);
+  }
+  // If holding key
+  if (player.inventory[DUNGEON_KEY_ID]) {
+    ctx.fillStyle = "#ff0";
+    ctx.fillRect(player.x*TILE_SIZE+2, player.y*TILE_SIZE+12, 3, 3);
+  }
 }
-
 function drawNPCs() {
-  npcs.forEach(npc => {
-    drawTile(npc.x, npc.y, npc.color);
-  });
+  let m = maps[player.currentMap];
+  if (!m.npcs) return;
+  for (let npc of m.npcs) {
+    ctx.fillStyle = npc.color;
+    ctx.fillRect(npc.x*TILE_SIZE+3, npc.y*TILE_SIZE+3, 10, 10);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(npc.x*TILE_SIZE+6, npc.y*TILE_SIZE+4, 4, 4);
+  }
 }
-
 function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
   drawMap();
   drawNPCs();
   drawPlayer();
 }
 
-// Movement & collision
+// ========== MOVEMENT ==========
 function canMove(x, y) {
-  if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return false;
-  if (map[y * MAP_WIDTH + x] === 1) return false;
+  let m = maps[player.currentMap];
+  if (x < 0 || x >= m.width || y < 0 || y >= m.height) return false;
+  let t = m.tiles[y*m.width + x];
+  if (t === 1 || t === 2) return false; // wall/house
+  // Collide with boss if not defeated
+  if (player.currentMap === "dungeon" && x === 9 && y === 9 && !bossDefeated) return false;
   return true;
 }
-
-function checkNPCInteraction() {
-  for (let npc of npcs) {
-    if (Math.abs(player.x - npc.x) <= 1 && Math.abs(player.y - npc.y) <= 1) {
-      return npc;
-    }
+function tryMove(dx, dy) {
+  if (inDialogue || currentCutscene) return;
+  if (!player.canMove) return;
+  const newX = player.x + dx;
+  const newY = player.y + dy;
+  if (canMove(newX, newY)) {
+    player.x = newX;
+    player.y = newY;
+    checkForObject();
+    checkNPCInteraction();
+    checkPortal();
   }
-  return null;
 }
 
-// Dialogue handling
+// ========== OBJECTS & QUESTS ==========
+function checkForObject() {
+  let m = maps[player.currentMap];
+  if (!m.objects) return;
+  for (let obj of m.objects) {
+    if (player.x === obj.x && player.y === obj.y) {
+      if (obj.type === "flower" && !player.inventory[FLOWER_ID]) {
+        player.inventory[FLOWER_ID] = true;
+        hudMsg = "You picked up the rare blue flower!";
+        setTimeout(()=>{hudMsg="";}, 2500);
+        return;
+      }
+      if (obj.type === "key" && !player.inventory[DUNGEON_KEY_ID]) {
+        player.inventory[DUNGEON_KEY_ID] = true;
+        hudMsg = "You found the dungeon key!";
+        setTimeout(()=>{hudMsg="";}, 2500);
+        return;
+      }
+      if (obj.type === "boss" && !bossDefeated) {
+        startCutscene([
+          "You have entered the lair of the Shadow Beast.",
+          "A fierce battle begins...",
+          "You wield the blue flower's power. The beast recoils!",
+          "With a final flash, the darkness is vanquished."
+        ], () => {
+          bossDefeated = true;
+          hudMsg = "You defeated the boss! Return to Grandpa Rowan.";
+          setTimeout(()=>{hudMsg="";}, 2500);
+        });
+        return;
+      }
+    }
+  }
+}
+
+// ========== PORTALS ==========
+function checkPortal() {
+  let m = maps[player.currentMap];
+  if (!m.portals) return;
+  for (let portal of m.portals) {
+    if (player.x === portal.x && player.y === portal.y) {
+      // Locked portal logic
+      if (portal.locked && !player.inventory[portal.key]) {
+        hudMsg = "The way is locked. You need a key!";
+        setTimeout(()=>{hudMsg="";}, 2000);
+        return;
+      }
+      changeMap(portal.to, portal.px, portal.py);
+      return;
+    }
+  }
+}
+
+// ========== MAP CHANGING ==========
+function changeMap(mapName, px, py) {
+  player.currentMap = mapName;
+  player.x = px;
+  player.y = py;
+  hudMsg = "Entered " + maps[mapName].name;
+  setTimeout(()=>{hudMsg="";}, 2000);
+}
+
+// ========== NPC INTERACTION ==========
+function checkNPCInteraction() {
+  let m = maps[player.currentMap];
+  if (!m.npcs) return;
+  for (let npc of m.npcs) {
+    if (Math.abs(player.x - npc.x) <= 1 && Math.abs(player.y - npc.y) <= 1) {
+      startDialogue(npc);
+      return;
+    }
+  }
+  // Check signs
+  if (m.objects) {
+    for (let obj of m.objects) {
+      if (obj.type === "sign" && Math.abs(player.x - obj.x) <= 1 && Math.abs(player.y - obj.y) <= 1) {
+        startDialogue({name: "Sign", dialogue: [obj.text], dialogueIndex: 0});
+        return;
+      }
+    }
+  }
+}
 function startDialogue(npc) {
   inDialogue = true;
   currentNPC = npc;
   npc.dialogueIndex = 0;
-  dialogueText.textContent = npc.dialogue[npc.dialogueIndex];
+  let text = "";
+  // Quest logic
+  if (npc.questId && !npc.questGiven) {
+    text = npc.dialogue[0];
+    npc.questGiven = true;
+  } else if (npc.questId && player.inventory[npc.questId] && !npc.questComplete) {
+    text = npc.questCompleteDialogue[0];
+    npc.questComplete = true;
+    if (npc.questId === FLOWER_ID) {
+      player.inventory[FLOWER_ID] = false;
+      startCutscene([
+        "The blue flower glows in Grandpa Rowan's hands.",
+        "A wave of hope spreads through the land.",
+        "But a shadow looms in the ancient dungeon..."
+      ], () => {});
+    }
+    if (npc.questId === DUNGEON_KEY_ID) {
+      player.inventory[DUNGEON_KEY_ID] = false;
+    }
+  } else if (npc.questId && npc.questComplete) {
+    text = npc.questCompleteDialogue[1] || "Thank you!";
+  } else {
+    text = npc.dialogue[npc.dialogueIndex];
+  }
+  dialogueText.textContent = `${npc.name}: ${text}`;
   dialogueBox.style.display = 'block';
 }
-
 function advanceDialogue() {
   if (!currentNPC) return;
-  currentNPC.dialogueIndex++;
-  if (currentNPC.dialogueIndex >= currentNPC.dialogue.length) {
-    endDialogue();
+  let npc = currentNPC;
+  npc.dialogueIndex++;
+  let text = "";
+  if (npc.dialogue && npc.dialogueIndex < npc.dialogue.length) {
+    text = npc.dialogue[npc.dialogueIndex];
+    dialogueText.textContent = `${npc.name}: ${text}`;
+  } else if (npc.questCompleteDialogue && npc.questComplete && npc.dialogueIndex < npc.questCompleteDialogue.length) {
+    text = npc.questCompleteDialogue[npc.dialogueIndex];
+    dialogueText.textContent = `${npc.name}: ${text}`;
   } else {
-    dialogueText.textContent = currentNPC.dialogue[currentNPC.dialogueIndex];
+    endDialogue();
   }
 }
-
 function endDialogue() {
   inDialogue = false;
   currentNPC = null;
   dialogueBox.style.display = 'none';
 }
 
-// Input handlers
+// ========== CUTSCENES ==========
+function startCutscene(lines, callback) {
+  player.canMove = false;
+  currentCutscene = {lines: lines, index: 0, callback: callback};
+  cutsceneDiv.style.display = 'flex';
+  cutsceneText.textContent = lines[0];
+  cutsceneBtn.style.display = "block";
+}
+function advanceCutscene() {
+  if (!currentCutscene) return;
+  currentCutscene.index++;
+  if (currentCutscene.index < currentCutscene.lines.length) {
+    cutsceneText.textContent = currentCutscene.lines[currentCutscene.index];
+  } else {
+    cutsceneDiv.style.display = 'none';
+    player.canMove = true;
+    let cb = currentCutscene.callback;
+    currentCutscene = null;
+    if (cb) cb();
+  }
+}
+cutsceneBtn.addEventListener('click', advanceCutscene);
+
+// ========== INPUT ==========
 window.addEventListener('keydown', e => {
+  if (currentCutscene) return;
   if (inDialogue) return;
   keysPressed[e.key] = true;
 });
-
 window.addEventListener('keyup', e => {
   keysPressed[e.key] = false;
 });
+nextBtn.addEventListener('click', advanceDialogue);
 
-nextBtn.addEventListener('click', () => {
-  advanceDialogue();
-});
-
-// Simple touch controls for mobile: swipe to move
-let touchStartX = null;
-let touchStartY = null;
-
+// Touch controls: swipe to move
+let touchStartX = null, touchStartY = null;
 canvas.addEventListener('touchstart', e => {
+  if (currentCutscene) return;
   if (inDialogue) return;
   const touch = e.touches[0];
   touchStartX = touch.clientX;
   touchStartY = touch.clientY;
 });
-
 canvas.addEventListener('touchend', e => {
+  if (currentCutscene) return;
   if (inDialogue) return;
   if (touchStartX === null || touchStartY === null) return;
   const touch = e.changedTouches[0];
@@ -235,42 +667,57 @@ canvas.addEventListener('touchend', e => {
     if (dy > 30) tryMove(0, 1);
     else if (dy < -30) tryMove(0, -1);
   }
-  touchStartX = null;
+  touchStartX = null; 
   touchStartY = null;
 });
 
-// Try to move player and check for NPC interaction
-function tryMove(dx, dy) {
-  const newX = player.x + dx;
-  const newY = player.y + dy;
-  if (canMove(newX, newY)) {
-    player.x = newX;
-    player.y = newY;
-    const npc = checkNPCInteraction();
-    if (npc) {
-      startDialogue(npc);
-    }
-  }
-}
-
-// Game loop
+// ========== GAME LOOP ==========
 function update() {
-  if (!inDialogue) {
-    if (keysPressed['ArrowUp'] || keysPressed['w']) tryMove(0, -1);
-    else if (keysPressed['ArrowDown'] || keysPressed['s']) tryMove(0, 1);
-    else if (keysPressed['ArrowLeft'] || keysPressed['a']) tryMove(-1, 0);
-    else if (keysPressed['ArrowRight'] || keysPressed['d']) tryMove(1, 0);
+  if (!inDialogue && !currentCutscene) {
+    if (keysPressed['ArrowUp'] || keysPressed['w']) { tryMove(0, -1); keysPressed['ArrowUp']=keysPressed['w']=false; }
+    else if (keysPressed['ArrowDown'] || keysPressed['s']) { tryMove(0, 1); keysPressed['ArrowDown']=keysPressed['s']=false; }
+    else if (keysPressed['ArrowLeft'] || keysPressed['a']) { tryMove(-1, 0); keysPressed['ArrowLeft']=keysPressed['a']=false; }
+    else if (keysPressed['ArrowRight'] || keysPressed['d']) { tryMove(1, 0); keysPressed['ArrowRight']=keysPressed['d']=false; }
   }
 }
-
+function updateHUD() {
+  let quest = "";
+  if (player.currentMap === "village") {
+    if (!maps.village.npcs[0].questGiven) quest = "Quest: Talk to Grandpa Rowan.";
+    else if (!player.inventory[FLOWER_ID] && !maps.village.npcs[0].questComplete) quest = "Quest: Find the blue flower in the forest.";
+    else if (player.inventory[FLOWER_ID] && !maps.village.npcs[0].questComplete) quest = "Quest: Bring the blue flower to Grandpa Rowan.";
+    else if (!bossDefeated) quest = "Quest: Defeat the dungeon boss.";
+    else quest = "Quest: Peace returns to the land!";
+  } else if (player.currentMap === "forest") {
+    if (!player.inventory[DUNGEON_KEY_ID]) quest = "Quest: Find the dungeon key.";
+    else quest = "Quest: Enter the dungeon (east).";
+  } else if (player.currentMap === "dungeon") {
+    quest = bossDefeated ? "Quest: Return to Grandpa Rowan." : "Quest: Defeat the Shadow Beast!";
+  }
+  let inv = [];
+  if (player.inventory[FLOWER_ID]) inv.push("Blue Flower");
+  if (player.inventory[DUNGEON_KEY_ID]) inv.push("Dungeon Key");
+  hud.innerHTML = `${quest}<br>Inventory: ${inv.join(", ") || "Empty"}<br>${hudMsg}`;
+}
 function gameLoop() {
   update();
   draw();
+  updateHUD();
   requestAnimationFrame(gameLoop);
 }
-
 gameLoop();
-</script>
 
+// ========== INTRO CUTSCENE ==========
+function startIntro() {
+  startCutscene([
+    "Legends of the Blue Flower",
+    "A mysterious force is draining the land's life.",
+    "Grandpa Rowan believes a rare flower can heal the world.",
+    "But darkness stirs in the ancient dungeon...",
+    "Your journey begins in the peaceful village."
+  ], () => {});
+}
+startIntro();
+</script>
 </body>
 </html>
