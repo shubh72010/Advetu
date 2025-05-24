@@ -715,9 +715,296 @@ function startIntro() {
     "Grandpa Rowan believes a rare flower can heal the world.",
     "But darkness stirs in the ancient dungeon...",
     "Your journey begins in the peaceful village."
-  ], () => {});
+  ], () => {
+    // After intro, allow movement
+    player.canMove = true;
+    hudMsg = "Find Grandpa Rowan to begin your quest!";
+    setTimeout(()=>{hudMsg="";}, 2500);
+  });
 }
 startIntro();
-</script>
-</body>
-</html>
+
+// ========== MID-GAME CUTSCENES & EVENTS ==========
+function flowerDeliveredCutscene() {
+  startCutscene([
+    "You hand the blue flower to Grandpa Rowan.",
+    "He crushes it gently, releasing a radiant blue light.",
+    "The land trembles as hope returns to the village.",
+    "But a chilling roar echoes from the dungeon entrance...",
+    "Grandpa Rowan: The Shadow Beast has awakened! Brave the dungeon and end the darkness!"
+  ], () => {
+    hudMsg = "Quest Updated: Enter the dungeon and defeat the Shadow Beast!";
+    setTimeout(()=>{hudMsg="";}, 3000);
+  });
+}
+
+function dungeonKeyFoundCutscene() {
+  startCutscene([
+    "You pick up the ancient key.",
+    "A distant rumble shakes the forest.",
+    "A hidden path to the dungeon appears to the east."
+  ], () => {
+    // Unlock the dungeon portal
+    let forestMap = maps["forest"];
+    forestMap.portals.forEach(portal => {
+      if (portal.to === "dungeon") portal.locked = false;
+    });
+    hudMsg = "Dungeon entrance unlocked!";
+    setTimeout(()=>{hudMsg="";}, 2000);
+  });
+}
+
+// ========== BOSS FIGHT MECHANICS ==========
+let bossFightActive = false;
+let bossHP = 5;
+let playerHP = 3;
+let bossFightPhase = 0;
+
+function startBossFight() {
+  bossFightActive = true;
+  bossHP = 5;
+  playerHP = 3;
+  bossFightPhase = 0;
+  player.canMove = false;
+  startCutscene([
+    "You have entered the lair of the Shadow Beast.",
+    "The beast emerges from the shadows, eyes glowing red.",
+    "Prepare for battle!"
+  ], () => {
+    showBossBattleHUD();
+    bossFightTurn();
+  });
+}
+
+function showBossBattleHUD() {
+  hud.innerHTML = `<b>Boss Fight!</b><br>Shadow Beast HP: ${bossHP}<br>Your HP: ${playerHP}<br>
+    <button id="attackBtn">Attack</button>
+    <button id="defendBtn">Defend</button>
+    <button id="healBtn">Use Blue Flower</button>`;
+  document.getElementById('attackBtn').onclick = playerAttack;
+  document.getElementById('defendBtn').onclick = playerDefend;
+  document.getElementById('healBtn').onclick = playerHeal;
+}
+
+function bossFightTurn() {
+  if (!bossFightActive) return;
+  if (bossHP <= 0) {
+    bossFightWin();
+    return;
+  }
+  if (playerHP <= 0) {
+    bossFightLose();
+    return;
+  }
+  // Await player action
+}
+
+function playerAttack() {
+  if (!bossFightActive) return;
+  let hit = Math.random() < 0.7;
+  if (hit) {
+    bossHP--;
+    hudMsg = "You strike the Shadow Beast!";
+  } else {
+    hudMsg = "Your attack misses!";
+  }
+  updateBossBattleHUD();
+  setTimeout(bossAttack, 1000);
+}
+
+function playerDefend() {
+  if (!bossFightActive) return;
+  hudMsg = "You brace for the attack!";
+  updateBossBattleHUD();
+  setTimeout(() => bossAttack(true), 1000);
+}
+
+function playerHeal() {
+  if (!bossFightActive) return;
+  if (player.inventory[FLOWER_ID]) {
+    playerHP = Math.min(playerHP + 2, 3);
+    player.inventory[FLOWER_ID] = false;
+    hudMsg = "You use the blue flower and feel renewed!";
+    updateBossBattleHUD();
+    setTimeout(bossAttack, 1000);
+  } else {
+    hudMsg = "You have no blue flower left!";
+    updateBossBattleHUD();
+  }
+}
+
+function bossAttack(defending = false) {
+  if (!bossFightActive) return;
+  let hit = Math.random() < 0.8;
+  if (hit) {
+    let dmg = defending ? 0 : 1;
+    playerHP -= dmg;
+    hudMsg = defending ? "You block the Shadow Beast's attack!" : "The Shadow Beast strikes you!";
+  } else {
+    hudMsg = "The Shadow Beast misses!";
+  }
+  updateBossBattleHUD();
+  setTimeout(bossFightTurn, 1000);
+}
+
+function updateBossBattleHUD() {
+  hud.innerHTML = `<b>Boss Fight!</b><br>Shadow Beast HP: ${bossHP}<br>Your HP: ${playerHP}<br>
+    <button id="attackBtn">Attack</button>
+    <button id="defendBtn">Defend</button>
+    <button id="healBtn">Use Blue Flower</button><br>${hudMsg}`;
+  document.getElementById('attackBtn').onclick = playerAttack;
+  document.getElementById('defendBtn').onclick = playerDefend;
+  document.getElementById('healBtn').onclick = playerHeal;
+}
+
+function bossFightWin() {
+  bossFightActive = false;
+  bossDefeated = true;
+  hudMsg = "";
+  player.canMove = true;
+  startCutscene([
+    "With a final blow, the Shadow Beast collapses.",
+    "Light floods the dungeon as evil is banished.",
+    "You have saved the land!"
+  ], () => {
+    hudMsg = "Return to Grandpa Rowan for your reward!";
+    setTimeout(()=>{hudMsg="";}, 3000);
+    // Remove boss object from dungeon
+    let dungeonMap = maps["dungeon"];
+    dungeonMap.objects = dungeonMap.objects.filter(obj => obj.type !== "boss");
+  });
+}
+
+function bossFightLose() {
+  bossFightActive = false;
+  player.canMove = false;
+  hudMsg = "";
+  startCutscene([
+    "The Shadow Beast's power overwhelms you.",
+    "You fall, but hope is not lost...",
+    "Try again when you are ready."
+  ], () => {
+    // Respawn player at dungeon entrance
+    player.x = 1; player.y = 10;
+    playerHP = 3;
+    bossHP = 5;
+    player.canMove = true;
+    hudMsg = "You awaken at the dungeon entrance.";
+    setTimeout(()=>{hudMsg="";}, 3000);
+  });
+}
+
+// ========== EXTENDED DIALOGUE & QUEST HANDLERS ==========
+function startDialogue(npc) {
+  inDialogue = true;
+  currentNPC = npc;
+  npc.dialogueIndex = 0;
+  let text = "";
+  // Quest logic
+  if (npc.questId && !npc.questGiven) {
+    text = npc.dialogue[0];
+    npc.questGiven = true;
+  } else if (npc.questId && player.inventory[npc.questId] && !npc.questComplete) {
+    text = npc.questCompleteDialogue[0];
+    npc.questComplete = true;
+    if (npc.questId === FLOWER_ID) {
+      player.inventory[FLOWER_ID] = false;
+      flowerDeliveredCutscene();
+    }
+    if (npc.questId === DUNGEON_KEY_ID) {
+      player.inventory[DUNGEON_KEY_ID] = false;
+      dungeonKeyFoundCutscene();
+    }
+  } else if (npc.questId && npc.questComplete) {
+    text = npc.questCompleteDialogue[1] || "Thank you!";
+  } else {
+    text = npc.dialogue[npc.dialogueIndex];
+  }
+  dialogueText.textContent = `${npc.name}: ${text}`;
+  dialogueBox.style.display = 'block';
+}
+function advanceDialogue() {
+  if (!currentNPC) return;
+  let npc = currentNPC;
+  npc.dialogueIndex++;
+  let text = "";
+  if (npc.dialogue && npc.dialogueIndex < npc.dialogue.length) {
+    text = npc.dialogue[npc.dialogueIndex];
+    dialogueText.textContent = `${npc.name}: ${text}`;
+  } else if (npc.questCompleteDialogue && npc.questComplete && npc.dialogueIndex < npc.questCompleteDialogue.length) {
+    text = npc.questCompleteDialogue[npc.dialogueIndex];
+    dialogueText.textContent = `${npc.name}: ${text}`;
+  } else {
+    endDialogue();
+  }
+}
+function endDialogue() {
+  inDialogue = false;
+  currentNPC = null;
+  dialogueBox.style.display = 'none';
+}
+
+// ========== OBJECTS & BOSS TRIGGER ==========
+function checkForObject() {
+  let m = maps[player.currentMap];
+  if (!m.objects) return;
+  for (let obj of m.objects) {
+    if (player.x === obj.x && player.y === obj.y) {
+      if (obj.type === "flower" && !player.inventory[FLOWER_ID]) {
+        player.inventory[FLOWER_ID] = true;
+        hudMsg = "You picked up the rare blue flower!";
+        setTimeout(()=>{hudMsg="";}, 2500);
+        return;
+      }
+      if (obj.type === "key" && !player.inventory[DUNGEON_KEY_ID]) {
+        player.inventory[DUNGEON_KEY_ID] = true;
+        dungeonKeyFoundCutscene();
+        return;
+      }
+      if (obj.type === "boss" && !bossDefeated && !bossFightActive) {
+        startBossFight();
+        return;
+      }
+    }
+  }
+}
+
+// ========== EPILOGUE ==========
+function showEpilogue() {
+  startCutscene([
+    "With the Shadow Beast defeated, peace returns to the land.",
+    "Grandpa Rowan thanks you for your courage.",
+    "The blue flower's magic restores the village.",
+    "You are hailed as a hero. The legend lives on.",
+    "THE END"
+  ], () => {
+    hudMsg = "Thank you for playing! Refresh to play again.";
+    setTimeout(()=>{hudMsg="";}, 5000);
+  });
+}
+
+// ========== FINAL QUEST CHECK ==========
+function updateHUD() {
+  let quest = "";
+  if (player.currentMap === "village") {
+    if (!maps.village.npcs[0].questGiven) quest = "Quest: Talk to Grandpa Rowan.";
+    else if (!player.inventory[FLOWER_ID] && !maps.village.npcs[0].questComplete) quest = "Quest: Find the blue flower in the forest.";
+    else if (player.inventory[FLOWER_ID] && !maps.village.npcs[0].questComplete) quest = "Quest: Bring the blue flower to Grandpa Rowan.";
+    else if (!bossDefeated) quest = "Quest: Defeat the dungeon boss.";
+    else quest = "Quest: Peace returns to the land!";
+  } else if (player.currentMap === "forest") {
+    if (!player.inventory[DUNGEON_KEY_ID]) quest = "Quest: Find the dungeon key.";
+    else quest = "Quest: Enter the dungeon (east).";
+  } else if (player.currentMap === "dungeon") {
+    quest = bossDefeated ? "Quest: Return to Grandpa Rowan." : "Quest: Defeat the Shadow Beast!";
+  }
+  let inv = [];
+  if (player.inventory[FLOWER_ID]) inv.push("Blue Flower");
+  if (player.inventory[DUNGEON_KEY_ID]) inv.push("Dungeon Key");
+  hud.innerHTML = `${quest}<br>Inventory: ${inv.join(", ") || "Empty"}<br>${hudMsg}`;
+  // Epilogue trigger
+  if (bossDefeated && player.currentMap === "village" && !bossFightActive) {
+    showEpilogue();
+    bossFightActive = true; // Prevents multiple triggers
+  }
+}
